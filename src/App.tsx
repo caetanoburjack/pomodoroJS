@@ -3,6 +3,7 @@ import { BrowserRouter } from "react-router-dom";
 import { Router } from "./Router";
 import { GlobalStyle } from "./styles/globlal";
 import { defaultTheme } from "./styles/themes/default";
+
 export function App() {
   return (
     <ThemeProvider theme={defaultTheme}>

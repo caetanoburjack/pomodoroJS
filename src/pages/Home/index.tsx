@@ -1,7 +1,8 @@
 import { useForm } from "react-hook-form";
-import { Play } from "phosphor-react";
+import { HandPalm, Play } from "phosphor-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as zod from "zod";
+import { differenceInSeconds } from "date-fns";
 
 import {
   //importing styled components from styles
@@ -11,14 +12,15 @@ import {
   MinuteAmountInput,
   Separator,
   StartCountdownButton,
+  StopCountdownButton,
   TaskInput,
 } from "./styles";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const newTaskFormValidationSchema = zod.object({
   //I'm creating this schema to send to zodResolver().
   task: zod.string().min(1, "Define a task, please!"),
-  minutesAmount: zod.number().min(5).max(60),
+  minutesAmount: zod.number().min(1).max(60),
 });
 
 interface taskInterface {
@@ -35,6 +37,9 @@ interface Task {
   id: string;
   task: string;
   minutesAmount: number;
+  startDate: Date;
+  stopDate?: Date; // Store the moment the countdows was stopped. It must be optional.
+  endDate?: Date;
 }
 
 export function Home() {
@@ -59,33 +64,83 @@ export function Home() {
   ); //register points what are the inputs I have on my form
   // function register receive a name and return all functions related to inputs, like onchange, onblur, onfocus
   // function watch is used to watch some field
-  function handleCreateNewTask(data: taskInterface) {
-    const id = String(new Date().getTime());
-    const newTask: Task = {
-      id,
-      task: data.task,
-      minutesAmount: data.minutesAmount,
-    };
-
-    setCurrentTaskId(id);
-
-    setTasks((state) => [...tasks, newTask]);
-
-    console.log(data);
-    console.log(currentTask);
-    reset();
-  }
 
   const currentTask = tasks.find((task) => task.id === currentTaskId);
 
   const currentTaskTimeInSeconds = currentTask
     ? currentTask.minutesAmount * 60
     : 0;
+
+  useEffect(() => {
+    let interval: number;
+    if (currentTask) {
+      interval = setInterval(() => {
+        const diffInSeconds = differenceInSeconds(
+          new Date(),
+          currentTask.startDate
+        );
+        if (diffInSeconds >= currentTaskTimeInSeconds) {
+          setTasks((state) =>
+            state.map((task) => {
+              if (task.id === currentTaskId) {
+                return { ...task, endDate: new Date() };
+              } else {
+                return task;
+              }
+            })
+          );
+          setElapsedTimeInSeconds(currentTaskTimeInSeconds);
+          clearInterval(interval);
+        } else {
+          setElapsedTimeInSeconds(diffInSeconds);
+        }
+      }, 1000);
+    }
+    return () => {
+      clearInterval(interval);
+    };
+  }, [currentTask, elapsedTimeInSeconds, currentTaskId]);
+
+  function handleCreateNewTask(data: taskInterface) {
+    const id = String(new Date().getTime());
+    const newTask: Task = {
+      id,
+      task: data.task,
+      minutesAmount: data.minutesAmount,
+      startDate: new Date(),
+    };
+
+    setTasks((state) => [...state, newTask]);
+
+    setCurrentTaskId(id);
+    setElapsedTimeInSeconds(0); // we need to zero this state, because if we dont, the counter will consider the time elapsed.
+
+    // console.log(data);
+    // console.log(currentTask);
+    reset();
+  }
+
+  function handleStopTask() {
+    setTasks((state) =>
+      state.map((task) => {
+        if (task.id === currentTaskId) {
+          return { ...task, stopDate: new Date() };
+        } else {
+          return task;
+        }
+      })
+    );
+
+    setCurrentTaskId(null);
+  }
+
   const currentTaskLeftTimeInSeconds = currentTask
     ? currentTaskTimeInSeconds - elapsedTimeInSeconds
     : 0;
 
-  const currentTaskTimeInMinutes = Math.floor(currentTaskTimeInSeconds / 60);
+  const currentTaskTimeInMinutes = Math.floor(
+    currentTaskLeftTimeInSeconds / 60
+  );
   const currentTaksRemainingTimeInSeconds = currentTaskLeftTimeInSeconds % 60;
 
   const currentTaskFormattedTimeInMinutes = String(
@@ -95,10 +150,23 @@ export function Home() {
     currentTaksRemainingTimeInSeconds
   ).padStart(2, "0");
 
-  console.log(formState.errors);
+  console.log("Tempo da tarefa em segundos: " + currentTaskTimeInSeconds);
+  console.log("Tempo passado em segundos: " + elapsedTimeInSeconds);
+  console.log("Tempo restante em segundos: " + currentTaskLeftTimeInSeconds);
+
+  useEffect(() => {
+    if (currentTask) {
+      document.title = `${currentTaskFormattedTimeInMinutes}:${currentTaskFormattedTimeInSeconds} - ${currentTask.task}`;
+    }
+  }, [
+    currentTaskFormattedTimeInMinutes,
+    currentTaskFormattedTimeInSeconds,
+    currentTask,
+  ]);
+
   const task = watch("task");
   const isSubmitDisabled = !task;
-
+  console.log(tasks);
   return (
     <HomeContainer>
       <form onSubmit={handleSubmit(handleCreateNewTask)} action="">
@@ -108,6 +176,7 @@ export function Home() {
             list="task-sugestions"
             id="task"
             placeholder="Nomeie essa atividade!"
+            disabled={!!currentTask}
             {...register("task")} // here I'm declaring an input an given him the name 'task'
           />
 
@@ -123,8 +192,9 @@ export function Home() {
             type="number"
             id="minutesAmount"
             placeholder="00"
+            disabled={!!currentTask}
             step={5}
-            min={5}
+            min={1}
             max={60}
             {...register("minutesAmount", { valueAsNumber: true })} // I can send as argument for register, a config object having some parameters
           />
@@ -140,10 +210,17 @@ export function Home() {
           <span>{currentTaskFormattedTimeInSeconds[1]}</span>
         </CountdownContainer>
 
-        <StartCountdownButton disabled={isSubmitDisabled} type="submit" id="">
-          <Play size={24} />
-          Iniciar
-        </StartCountdownButton>
+        {currentTask ? (
+          <StopCountdownButton onClick={handleStopTask} type="button" id="">
+            <HandPalm size={24} />
+            Interromper
+          </StopCountdownButton>
+        ) : (
+          <StartCountdownButton disabled={isSubmitDisabled} type="submit" id="">
+            <Play size={24} />
+            Iniciar
+          </StartCountdownButton>
+        )}
       </form>
     </HomeContainer>
   );
